@@ -1,0 +1,61 @@
+@startuml erd-taskflow
+hide circle
+skinparam classAttributeIconSize 0
+
+class users {
+  bigint id PK
+  string name
+  string email
+  string password
+  datetime email_verified_at
+  string remember_token
+}
+
+class projects {
+  bigint id PK
+  bigint owner_id FK -> users.id
+  string name
+}
+
+class project_user {
+  bigint project_id FK -> projects.id
+  bigint user_id    FK -> users.id
+  string role
+  -- PK(project_id, user_id)
+}
+
+class tasks {
+  bigint id PK
+  bigint project_id  FK -> projects.id
+  bigint author_id   FK -> users.id
+  bigint assignee_id FK -> users.id
+  string title
+  text description
+  string status
+  string priority
+  date due_date
+}
+
+class comments {
+  bigint id PK
+  bigint task_id   FK -> tasks.id
+  bigint author_id FK -> users.id
+  text body
+}
+
+class reports {
+  bigint id PK
+  date period_start
+  date period_end
+  json payload
+  string path
+}
+
+users "1" -- "many" projects : owner_id
+users "many" -- "many" projects : project_user
+projects "1" -- "many" tasks
+tasks "1" -- "many" comments
+users "1" -- "many" tasks : author_id
+users "1" -- "many" tasks : assignee_id
+users "1" -- "many" comments : author_id
+@enduml
