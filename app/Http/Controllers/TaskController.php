@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TaskCreated;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Request;
@@ -45,6 +46,8 @@ class TaskController extends Controller
             "priority" => $data["priority"] ?? 1,
             "due_date" => $data["due_date"] ?? now()->toDateString(),
         ]);
+
+        TaskCreated::dispatch($task);
 
         return response()->json($task, 201);
     }
