@@ -99,6 +99,8 @@ services:
       command: php artisan queue:work --sleep=3 --tries=3 --timeout=60
       volumes:
         - ".:/var/www/app/"
+      networks:
+        - local
 
     scheduler:
       env_file:
@@ -124,6 +126,8 @@ services:
         - php
         - postgres
         - redis
+      networks:
+        - local
 
     postgres:
       env_file:

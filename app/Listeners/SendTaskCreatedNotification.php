@@ -3,24 +3,11 @@
 namespace App\Listeners;
 
 use App\Events\TaskCreated;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
+use App\Jobs\SendTelegramMessageJob;
 use Illuminate\Support\Facades\Log;
 
-class SendTaskCreatedNotification implements ShouldQueue
+class SendTaskCreatedNotification
 {
-    use InteractsWithQueue;
-
-    public $queue = "notifications";
-
-    /**
-     * Create the event listener.
-     */
-    public function __construct()
-    {
-        //
-    }
-
     /**
      * Handle the event.
      */
@@ -28,12 +15,24 @@ class SendTaskCreatedNotification implements ShouldQueue
     {
         $task = $event->task;
 
-        Log::info("Task created notification sent", [
+        $title = $task->title ?? "Без назви";
+
+        $message =
+            "Нова задача створена\n" .
+            "ID: {$task->id}\n" .
+            "Назва: {$title}\n" .
+            "Проєкт ID: {$task->project_id}\n" .
+            "Статус: {$task->status}\n" .
+            "Створено: {$task->created_at}";
+
+        Log::info("Task created notification queued", [
             "task_id" => $task->id,
-            "title" => $task->title ?? null,
+            "title" => $title,
             "project_id" => $task->project_id ?? null,
             "status" => $task->status ?? null,
             "created_at" => now()->toDateTimeString(),
         ]);
+
+        SendTelegramMessageJob::dispatch($message);
     }
 }
