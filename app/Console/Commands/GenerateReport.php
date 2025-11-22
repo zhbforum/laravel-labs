@@ -4,10 +4,12 @@ namespace App\Console\Commands;
 
 use App\Models\Project;
 use App\Models\Report;
+use App\Models\SchedulerLog;
 use App\Models\Task;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 class GenerateReport extends Command
 {
@@ -29,33 +31,41 @@ class GenerateReport extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $this->info("Generating tasks report...");
 
-        $now = Carbon::now();
+        $log = SchedulerLog::start(
+            $this->signature,
+            "Generating per-project task statistics"
+        );
 
-        $statusTodo = "todo";
-        $statusInProgress = "in_progress";
-        $statusDone = "done";
+        try {
+            $now = Carbon::now();
 
-        $deadlineColumn = "due_date";
+            $statusTodo = "todo";
+            $statusInProgress = "in_progress";
+            $statusDone = "done";
 
-        $rows = Task::query()
-            ->select("project_id")
-            ->selectRaw("count(*) as total")
-            ->selectRaw("sum(case when status = ? then 1 else 0 end) as todo", [
-                $statusTodo,
-            ])
-            ->selectRaw(
-                "sum(case when status = ? then 1 else 0 end) as in_progress",
-                [$statusInProgress]
-            )
-            ->selectRaw("sum(case when status = ? then 1 else 0 end) as done", [
-                $statusDone,
-            ])
-            ->selectRaw(
-                "
+            $deadlineColumn = "due_date";
+
+            $rows = Task::query()
+                ->select("project_id")
+                ->selectRaw("count(*) as total")
+                ->selectRaw(
+                    "sum(case when status = ? then 1 else 0 end) as todo",
+                    [$statusTodo]
+                )
+                ->selectRaw(
+                    "sum(case when status = ? then 1 else 0 end) as in_progress",
+                    [$statusInProgress]
+                )
+                ->selectRaw(
+                    "sum(case when status = ? then 1 else 0 end) as done",
+                    [$statusDone]
+                )
+                ->selectRaw(
+                    "
                 sum(
                     case
                         when {$deadlineColumn} is not null
@@ -65,62 +75,78 @@ class GenerateReport extends Command
                     end
                 ) as expired
             ",
-                [$now, $statusDone]
-            )
-            ->groupBy("project_id")
-            ->get()
-            ->keyBy("project_id");
+                    [$now, $statusDone]
+                )
+                ->groupBy("project_id")
+                ->get()
+                ->keyBy("project_id");
 
-        if ($rows->isEmpty()) {
-            $this->warn("No tasks found. Nothing to report.");
-            return 0;
+            if ($rows->isEmpty()) {
+                $msg = "No tasks found. Nothing to report.";
+                $this->warn($msg);
+
+                $log->markSuccess($msg);
+
+                return SymfonyCommand::SUCCESS;
+            }
+
+            $projects = Project::query()
+                ->whereIn("id", $rows->keys())
+                ->get()
+                ->keyBy("id");
+
+            $items = $rows
+                ->map(function ($row, int $projectId) use ($projects) {
+                    $project = $projects->get($projectId);
+
+                    return [
+                        "project" => [
+                            "id" => $projectId,
+                            "name" => $project?->name,
+                        ],
+                        "tasks" => [
+                            "total" => (int) $row->total,
+                            "todo" => (int) $row->todo,
+                            "in_progress" => (int) $row->in_progress,
+                            "done" => (int) $row->done,
+                            "expired" => (int) $row->expired,
+                        ],
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $today = $now->toDateString();
+
+            $report = Report::query()->create([
+                "period_start" => $today,
+                "period_end" => $today,
+                "payload" => $items,
+                "path" => "",
+            ]);
+
+            $this->info("Report #{$report->id} saved into `reports` table.");
+
+            if ($this->option("store-file")) {
+                $this->storeFile($report, $items, $now);
+            }
+
+            $finalMessage = sprintf(
+                "Report #%d generated%s.",
+                $report->id,
+                $this->option("store-file") ? " and JSON file stored" : ""
+            );
+
+            $this->info("Report generation finished.");
+            $log->markSuccess($finalMessage);
+
+            return SymfonyCommand::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->error("Error while generating report: " . $e->getMessage());
+            $log->markFailed($e->getMessage());
+
+            return SymfonyCommand::FAILURE;
         }
-
-        $projects = Project::query()
-            ->whereIn("id", $rows->keys())
-            ->get()
-            ->keyBy("id");
-
-        $items = $rows
-            ->map(function ($row, int $projectId) use ($projects) {
-                $project = $projects->get($projectId);
-
-                return [
-                    "project" => [
-                        "id" => $projectId,
-                        "name" => $project?->name,
-                    ],
-                    "tasks" => [
-                        "total" => (int) $row->total,
-                        "todo" => (int) $row->todo,
-                        "in_progress" => (int) $row->in_progress,
-                        "done" => (int) $row->done,
-                        "expired" => (int) $row->expired,
-                    ],
-                ];
-            })
-            ->values()
-            ->all();
-
-        $today = $now->toDateString();
-
-        /** @var \App\Models\Report $report */
-        $report = Report::query()->create([
-            "period_start" => $today,
-            "period_end" => $today,
-            "payload" => $items,
-            "path" => "",
-        ]);
-
-        $this->info("Report #{$report->id} saved into `reports` table.");
-
-        if ($this->option("store-file")) {
-            $this->storeFile($report, $items, $now);
-        }
-
-        $this->info("Report generation finished.");
-
-        return 0;
     }
 
     protected function storeFile(
