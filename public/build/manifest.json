@@ -1,0 +1,22 @@
+{
+  "resources/css/app.css": {
+    "file": "assets/app-CxxnFgW3.css",
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/app.js": {
+    "file": "assets/app--ytMZDZu.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true
+  },
+  "resources/js/live.js": {
+    "file": "assets/live-B-moJuOv.js",
+    "name": "live",
+    "src": "resources/js/live.js",
+    "isEntry": true,
+    "imports": [
+      "resources/js/app.js"
+    ]
+  }
+}
